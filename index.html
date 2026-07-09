@@ -476,7 +476,7 @@ function renderHome(){
   $('#homeTotals').innerHTML=[
     {n:all.n,k:'Estações · 9 praças'},
     {n:all.livre,k:'Faces livres p/ venda',c:'acc'},
-    {n:all.calhau,k:'Dessas, em calhau'},
+    {n:all.calhau,k:'Calhau'},
     {n:all.occRate+'%',k:'Ocupação estática geral'},
   ].map(k=>`<div class="htk ${k.c||''}"><div class="n">${typeof k.n==='number'?fmt(k.n):k.n}</div><div class="k">${k.k}</div></div>`).join('');
   const cards=PRACAS.map(p=>{const s=stats(listOf(p));return {p,s};})
