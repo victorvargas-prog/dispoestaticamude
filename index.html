@@ -178,6 +178,25 @@ tbody tr:hover{background:var(--surface2)}
 footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;
   font-size:11px;color:var(--faint);letter-spacing:.5px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .hidden{display:none!important}
+/* GATE */
+#gate{position:fixed;inset:0;z-index:500;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+#gate .gate-box{width:100%;max-width:380px;text-align:center}
+#gate .glogo{font-family:Oswald;font-weight:700;font-size:38px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px}
+#gate .glogo .dot{color:var(--accent)}
+#gate .gsub{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:38px}
+#gate .gcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:30px 26px;box-shadow:var(--shadow)}
+#gate .gcard h2{font-family:Oswald;font-weight:500;font-size:17px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+#gate .gcard p{font-size:12.5px;color:var(--muted);margin-bottom:22px}
+#gate input{width:100%;font-family:'IBM Plex Mono',monospace;font-size:15px;letter-spacing:2px;text-align:center;
+  background:var(--surface2);border:1px solid var(--line2);color:var(--text);padding:14px;border-radius:10px;outline:none;transition:.15s}
+#gate input:focus{border-color:var(--accent)}
+#gate input.err{border-color:var(--accent);animation:shake .3s}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+#gate button{width:100%;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:1px;text-transform:uppercase;
+  background:var(--accent);border:none;color:#fff;padding:14px;border-radius:10px;cursor:pointer;transition:.15s;font-weight:600}
+#gate button:hover{opacity:.9}
+#gate .gerr{color:var(--accent);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.5px;margin-top:14px;min-height:14px;text-transform:uppercase}
+#app.locked{filter:blur(8px);pointer-events:none;user-select:none}
 @media(max-width:820px){.kpis{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.home-total{grid-template-columns:repeat(2,1fr)}.hero{align-items:flex-start}.occ-badge{text-align:left}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
@@ -215,6 +234,20 @@ footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);font-fa
 </style>
 </head>
 <body>
+<div id="gate">
+  <div class="gate-box">
+    <div class="glogo">MUDE<span class="dot">.</span></div>
+    <div class="gsub">Disponibilidade OOH</div>
+    <div class="gcard">
+      <h2>Acesso restrito</h2>
+      <p>Digite o código de acesso para continuar.</p>
+      <input id="gateInput" type="password" placeholder="• • • • • • • •" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text">
+      <button id="gateBtn">Entrar</button>
+      <div class="gerr" id="gateErr"></div>
+    </div>
+  </div>
+</div>
+<div id="app" class="locked">
 <header>
   <div class="hd">
     <div class="brand" id="brandHome">
@@ -344,6 +377,7 @@ footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);font-fa
   <div class="exp-footer-bar"><button class="btn" id="cancelExport">Cancelar</button>
     <button class="btn primary" id="doExportBtn">⭳ Baixar arquivo</button></div>
 </div>
+</div><!-- /#app -->
 
 <script>
 const SHEET_ID="14MWsUV_xkfW36cOvhJZ5ENaEisy4ssBQDPwpGUlZKjw";
@@ -679,11 +713,37 @@ async function doRefresh(force){
   syncing=false; setSyncUI(anyLive?'on':'off');
 }
 // re-sincroniza ao voltar para a aba do navegador
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) doRefresh(false); });
-window.addEventListener('focus',()=>doRefresh(false));
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden && !$('#app').classList.contains('locked')) doRefresh(false); });
+window.addEventListener('focus',()=>{ if(!$('#app').classList.contains('locked')) doRefresh(false); });
 
-route(); lastHash=dataHash(STATIONS); doRefresh(true);
-setInterval(()=>doRefresh(false), 30000); // auto-atualiza a cada 30s
+let __appStarted=false;
+function startApp(){
+  if(__appStarted) return; __appStarted=true;
+  route(); lastHash=dataHash(STATIONS); doRefresh(true);
+  setInterval(()=>doRefresh(false), 30000); // auto-atualiza a cada 30s
+}
+
+/* ---------- GATE de acesso ---------- */
+(function(){
+  const CODE="Op3cMud3";
+  const KEY="mubs_disp_auth";
+  const gate=$('#gate'), app=$('#app'), inp=$('#gateInput'), btn=$('#gateBtn'), err=$('#gateErr');
+  function unlock(){
+    gate.classList.add('hidden'); app.classList.remove('locked');
+    try{ sessionStorage.setItem(KEY,'1'); }catch(e){}
+    startApp();
+  }
+  function tryCode(){
+    if(inp.value===CODE){ err.textContent=''; unlock(); }
+    else{ err.textContent='Código incorreto'; inp.classList.add('err'); inp.select();
+      setTimeout(()=>inp.classList.remove('err'),350); }
+  }
+  let already=false; try{ already=sessionStorage.getItem(KEY)==='1'; }catch(e){}
+  if(already){ gate.classList.add('hidden'); app.classList.remove('locked'); startApp(); }
+  else{ setTimeout(()=>inp.focus(),100); }
+  btn.addEventListener('click',tryCode);
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') tryCode(); });
+})();
 </script>
 </body>
 </html>
