@@ -289,6 +289,18 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
   border-top:1px solid var(--line);padding:16px 20px;display:flex;justify-content:flex-end;gap:10px}
 .fmt-row{display:flex;gap:8px}
 .select-all{font-size:11.5px;color:var(--accent);cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:.5px}
+.exp-est-ctrls{margin-bottom:6px}
+.exp-est-picker{margin-top:14px;border-top:1px solid var(--line);padding-top:16px}
+.exp-est-picker input{width:100%;font-family:Inter;font-size:13px;background:var(--surface2);border:1px solid var(--line2);
+  color:var(--text);padding:10px 13px;border-radius:9px;outline:none;margin-bottom:12px}
+.exp-est-picker input:focus{border-color:var(--accent)}
+.exp-est-list{max-height:280px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 16px;padding-right:4px}
+.exp-est-item{display:flex;align-items:center;gap:9px;padding:7px 4px;font-size:12.5px;cursor:pointer;border-radius:6px}
+.exp-est-item:hover{background:var(--surface2)}
+.exp-est-item input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex:none}
+.exp-est-item .ec{font-family:'IBM Plex Mono',monospace;font-size:12px}
+.exp-est-item .eb{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exp-est-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--faint)}
 </style>
 </head>
 <body>
@@ -435,6 +447,17 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
           <span>Somente ocupadas <small>venda firme</small></span></label>
         <label class="radio-row"><input type="radio" name="expStatus" value="all">
           <span>Tudo <small>inclui digitais também</small></span></label>
+      </div>
+    </div>
+    <div class="exp-card" id="expEstacoesCard"><h4>Estações <small style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)" id="expEstInfo"></small></h4>
+      <div class="exp-est-ctrls">
+        <label class="check-row" style="padding:0"><input type="checkbox" id="expEstAll" checked><span>Todas as estações da(s) praça(s) selecionada(s)</span></label>
+      </div>
+      <div id="expEstPicker" class="exp-est-picker hidden">
+        <input type="text" id="expEstSearch" placeholder="Buscar estação por código ou bairro…">
+        <div class="exp-est-list" id="expEstList"></div>
+        <div class="exp-est-foot"><span id="expEstCount">0 selecionadas</span>
+          <span><span class="select-all" id="expEstMarkAll">marcar visíveis</span> · <span class="select-all" id="expEstClear">limpar</span></span></div>
       </div>
     </div>
     <div class="exp-card"><h4>Colunas do arquivo</h4><div class="col-grid" id="expCols"></div>
@@ -722,8 +745,10 @@ const EXP_COLS=[{k:'cod',label:'Código'},{k:'praca',label:'Praça'},{k:'cidade'
   {k:'faceStatus',label:'Status da face'},{k:'anunciante',label:'Anunciante/conteúdo'},
   {k:'imp',label:'Impactos/mês'},{k:'coord',label:'Coordenadas'}];
 let expPracas=new Set(), expCols=new Set(EXP_COLS.map(c=>c.k)), expFormat='csv';
+let expEstAll=true, expEstacoes=new Set(); // seleção de estações específicas (por código)
 function openExportPage(){expPracas=new Set(currentPraca?[currentPraca]:[]);
-  renderExpPracas();renderExpCols();updateExpPreview();$('#expOverlay').classList.add('open');}
+  expEstAll=true; expEstacoes=new Set(); $('#expEstAll').checked=true; $('#expEstPicker').classList.add('hidden');
+  renderExpPracas();renderExpCols();renderExpEstacoes();updateExpPreview();$('#expOverlay').classList.add('open');}
 function closeExportPage(){$('#expOverlay').classList.remove('open');}
 $('#openExport').addEventListener('click',openExportPage);
 $('#openExport2').addEventListener('click',openExportPage);
@@ -731,8 +756,48 @@ $('#closeExport').addEventListener('click',closeExportPage);
 $('#cancelExport').addEventListener('click',closeExportPage);
 function renderExpPracas(){$('#expPracas').innerHTML=PRACAS.map(p=>`<button class="chip ${expPracas.has(p)?'on':''}" data-p="${p}">${p}</button>`).join('');
   $$('#expPracas .chip').forEach(c=>c.addEventListener('click',()=>{const p=c.dataset.p;
-    expPracas.has(p)?expPracas.delete(p):expPracas.add(p);c.classList.toggle('on');updateExpPreview();}));}
-$('#expPracasAll').addEventListener('click',()=>{if(expPracas.size===PRACAS.length)expPracas.clear();else PRACAS.forEach(p=>expPracas.add(p));renderExpPracas();updateExpPreview();});
+    expPracas.has(p)?expPracas.delete(p):expPracas.add(p);c.classList.toggle('on');
+    expEstacoes=new Set(); renderExpEstacoes(); updateExpPreview();}));}
+$('#expPracasAll').addEventListener('click',()=>{if(expPracas.size===PRACAS.length)expPracas.clear();else PRACAS.forEach(p=>expPracas.add(p));
+  expEstacoes=new Set(); renderExpPracas();renderExpEstacoes();updateExpPreview();});
+
+/* ---- seleção de estações específicas ---- */
+function expScopePracas(){ return expPracas.size?[...expPracas]:(currentPraca?[currentPraca]:PRACAS); }
+function expStationPool(){ const set=new Set(expScopePracas());
+  return STATIONS.filter(s=>set.has(s.praca)).sort((a,b)=>a.cod.localeCompare(b.cod)); }
+function renderExpEstacoes(){
+  const pool=expStationPool();
+  $('#expEstInfo').textContent = expEstAll ? `(todas — ${pool.length})` : `(${expEstacoes.size} de ${pool.length})`;
+  if(expEstAll){ $('#expEstList').innerHTML=''; return; }
+  const q=($('#expEstSearch').value||'').toLowerCase();
+  const filt=pool.filter(s=>!q||(s.cod+' '+s.bairro).toLowerCase().includes(q));
+  $('#expEstList').innerHTML = filt.length?filt.map(s=>{
+    const camps=[s.a,s.b].filter(v=>{const t=(v||'').trim();return t&&t!=='Disponível'&&t!=='Digital';});
+    const resumo=camps.length?camps.join(' / '):'sem campanha';
+    return `<label class="exp-est-item"><input type="checkbox" data-cod="${s.cod}" data-praca="${s.praca}" ${expEstacoes.has(s.praca+'|'+s.cod)?'checked':''}>
+      <span class="ec">${s.cod}</span><span class="eb">· ${s.bairro} · ${resumo}</span></label>`;
+  }).join(''):'<div style="color:var(--muted);font-size:12px;padding:10px">Nenhuma estação encontrada.</div>';
+  $$('#expEstList input').forEach(i=>i.addEventListener('change',()=>{
+    const key=i.dataset.praca+'|'+i.dataset.cod;
+    i.checked?expEstacoes.add(key):expEstacoes.delete(key);
+    $('#expEstCount').textContent=`${expEstacoes.size} selecionadas`;
+    $('#expEstInfo').textContent=`(${expEstacoes.size} de ${expStationPool().length})`;
+    updateExpPreview();}));
+  $('#expEstCount').textContent=`${expEstacoes.size} selecionadas`;
+}
+$('#expEstAll').addEventListener('change',e=>{
+  expEstAll=e.target.checked;
+  $('#expEstPicker').classList.toggle('hidden',expEstAll);
+  renderExpEstacoes(); updateExpPreview();
+});
+$('#expEstSearch').addEventListener('input',renderExpEstacoes);
+$('#expEstMarkAll').addEventListener('click',()=>{
+  const q=($('#expEstSearch').value||'').toLowerCase();
+  expStationPool().filter(s=>!q||(s.cod+' '+s.bairro).toLowerCase().includes(q))
+    .forEach(s=>expEstacoes.add(s.praca+'|'+s.cod));
+  renderExpEstacoes(); updateExpPreview();});
+$('#expEstClear').addEventListener('click',()=>{expEstacoes=new Set();renderExpEstacoes();updateExpPreview();});
+
 function renderExpCols(){$('#expCols').innerHTML=EXP_COLS.map(c=>`<label class="check-row"><input type="checkbox" data-c="${c.k}" ${expCols.has(c.k)?'checked':''}><span>${c.label}</span></label>`).join('');
   $$('#expCols input').forEach(i=>i.addEventListener('change',()=>{i.checked?expCols.add(i.dataset.c):expCols.delete(i.dataset.c);updateExpPreview();}));}
 $('#expColsAll').addEventListener('click',()=>{if(expCols.size===EXP_COLS.length)expCols.clear();else EXP_COLS.forEach(c=>expCols.add(c.k));renderExpCols();updateExpPreview();});
@@ -740,9 +805,11 @@ $$('#expFormat .chip').forEach(b=>b.addEventListener('click',()=>{$$('#expFormat
 document.querySelectorAll('input[name="expStatus"]').forEach(r=>r.addEventListener('change',updateExpPreview));
 function buildExportRows(){
   const status=document.querySelector('input[name="expStatus"]:checked').value;
-  const set=expPracas.size?expPracas:new Set(currentPraca?[currentPraca]:PRACAS);
+  const set=new Set(expScopePracas());
+  let base=STATIONS.filter(s=>set.has(s.praca));
+  if(!expEstAll) base=base.filter(s=>expEstacoes.has(s.praca+'|'+s.cod)); // só estações marcadas
   const out=[];
-  STATIONS.filter(s=>set.has(s.praca)).forEach(s=>{const ca=classA(s),cb=classB(s);
+  base.forEach(s=>{const ca=classA(s),cb=classB(s);
     [['A',ca,s.a],['B',cb,s.b]].forEach(([face,c,val])=>{
       let inc=false;
       if(status==='livre')inc=(c==='disp'||c==='calhau');
