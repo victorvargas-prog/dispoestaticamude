@@ -391,17 +391,22 @@ const SNAPSHOT=[{"praca":"BSB","cod":"BSB 01-021","tipo":"Skate - Digital","cida
 let STATIONS = SNAPSHOT.slice();
 let LIVE_OK = new Set();
 let currentPraca = "";
+// Clientes marcados como CALHAU no resumo de cada praça (fallback do snapshot; atualizado ao vivo)
+const CALHAU_FALLBACK={"BSB":["EVOLVE","EVOLVE BONI","EVOLVE CALHAU","GRANADO","GRANADO CARE","LEO MADEIRAS"],"GRJ":[],"FOR":["99 FOOD","GRANADO","GRANADO CARE"],"GYN":["99 FOOD","SPRIT"],"FLN":["GRANADO","GRANADO CARE"],"JPA":["GRANADO CARE"],"RIO":["99 FOOD CALHAU","GRANADO","GRANADO CARE","LEO MADEIRAS","UNISSUAM"],"SPO":["FRESCATTO","MÉLIUZ","Sorox - adicional (calhau)"],"REC":["99 FOOD","GRANADO","GRANADO CARE","LEO MADEIRAS"]};
+const CALHAU={}; Object.keys(CALHAU_FALLBACK).forEach(p=>CALHAU[p]=new Set(CALHAU_FALLBACK[p]));
 const $=s=>document.querySelector(s);
 const $$=s=>document.querySelectorAll(s);
 const fmt=n=>(n==null?'—':n.toLocaleString('pt-BR'));
 const norm=s=>(s||'').trim();
-const isCalhau=v=>norm(v).toLowerCase().includes('calhau');
+const isCalhau=(v,p)=>{ const t=norm(v); if(!t) return false;
+  if(t.toLowerCase().includes('calhau')) return true;               // nome já contém "calhau"
+  const set = CALHAU[p||currentPraca]; return set ? set.has(t) : false; }; // ou marcado no resumo da praça
 const hidden={disp:false,calhau:false,occ:false,digi:false};
 
 function classA(r){ if(DIGITAL_TIPOS.has(r.tipo)) return 'digi'; const v=norm(r.a);
-  if(v==='Disponível') return 'disp'; if(isCalhau(v)) return 'calhau'; return 'occ'; }
+  if(v==='Disponível') return 'disp'; if(isCalhau(v,r.praca)) return 'calhau'; return 'occ'; }
 function classB(r){ const v=norm(r.b);
-  if(v==='Digital') return 'digi'; if(v==='Disponível') return 'disp'; if(isCalhau(v)) return 'calhau'; return 'occ'; }
+  if(v==='Digital') return 'digi'; if(v==='Disponível') return 'disp'; if(isCalhau(v,r.praca)) return 'calhau'; return 'occ'; }
 const statLabel={disp:'Disponível',calhau:'Calhau',occ:'Ocupada',digi:'Digital'};
 
 /* ---------- live sync ---------- */
@@ -443,12 +448,33 @@ async function fetchPraca(p){
     icoord=idxOf(H,['Coordenada Geográfica','Coordenada']),im=idxOf(H,['1. Impactos','Impactos']);
   if(ic<0) throw new Error('sem coluna Código');
   const out=[];
+  const codRe=/^[A-Z]{2,4}\s?\d/; // padrão de código de estação (ex: "FOR 01-010", "JBG 06-001")
   for(const rrow of body){const cod=norm(rrow[ic]);if(!cod)continue;
+    if(!codRe.test(cod)) continue; // ignora linhas do bloco de resumo
     let imp=null;if(im>=0){const raw=String(rrow[im]||'').replace(/\./g,'').replace(/,/g,'.').replace(/[^\d.]/g,'');
       const v=parseFloat(raw);imp=isNaN(v)?null:Math.round(v);}
     out.push({praca:p,cod,tipo:norm(rrow[it]),cidade:icid>=0?norm(rrow[icid]):CIDADE[p]||'',bairro:norm(rrow[ib]),
       a:norm(rrow[ia]),b:norm(rrow[ibf]),coord:icoord>=0?norm(rrow[icoord]):'',imp});}
-  if(!out.length)throw new Error('vazio'); return out;}
+  if(!out.length)throw new Error('vazio');
+  // ---- parse do bloco de resumo: cliente + marcador "CALHAU" na mesma linha ----
+  const calhauSet=new Set();
+  for(const rrow of body){
+    const cells=rrow.map(norm);
+    const hasMarker=cells.some(c=>c.toLowerCase()==='calhau');
+    if(!hasMarker) continue;
+    // nome do cliente: 1º texto que não seja "calhau", número, data ou total
+    for(const c of cells){
+      const t=norm(c); if(!t) continue;
+      const low=t.toLowerCase();
+      if(low==='calhau') continue;
+      if(/^\d[\d.,]*$/.test(t)) continue;                         // número puro
+      if((t.includes('/')||t.includes('→')) && /\d/.test(t)) continue; // data
+      if(low.includes('disponível')||low.includes('disponivel')) continue;
+      if(codRe.test(t)) continue;                                  // é um código de estação
+      calhauSet.add(t); break;
+    }
+  }
+  return {stations:out, calhau:calhauSet};}
 
 function listOf(p){ return STATIONS.filter(s=>s.praca===p); }
 function stats(list){
@@ -687,9 +713,12 @@ document.addEventListener('click',e=>{const l=e.target.closest('#legend .lg');if
 $('#theme').addEventListener('click',()=>{const c=document.documentElement.getAttribute('data-theme');
   document.documentElement.setAttribute('data-theme',c==='light'?'':'light');});
 let lastHash="", syncing=false, lastSync=null;
-function dataHash(list){ // assinatura leve só das colunas que importam p/ disponibilidade
+function dataHash(list){ // assinatura leve das colunas que importam + estado de calhau
   let h=0,str='';list.forEach(s=>{str=s.cod+'|'+s.tipo+'|'+s.a+'|'+s.b;
-    for(let i=0;i<str.length;i++){h=(h*31+str.charCodeAt(i))|0;}}); return h+'_'+list.length;}
+    for(let i=0;i<str.length;i++){h=(h*31+str.charCodeAt(i))|0;}});
+  const cal=Object.keys(CALHAU).sort().map(p=>p+':'+[...CALHAU[p]].sort().join(',')).join(';');
+  for(let i=0;i<cal.length;i++){h=(h*31+cal.charCodeAt(i))|0;}
+  return h+'_'+list.length;}
 function setSyncUI(state){ // state: 'on'|'off'|'busy'
   const dot=$('#syncInd')&&$('#syncInd').querySelector('.sync-dot');
   if(dot) dot.style.background = state==='off' ? 'var(--faint)' : 'var(--accent)';
@@ -705,7 +734,10 @@ async function doRefresh(force){
   const res=await Promise.allSettled(PRACAS.map(fetchPraca));
   let merged=[], anyLive=false;
   res.forEach((r,i)=>{const p=PRACAS[i];
-    if(r.status==='fulfilled'&&r.value.length){merged=merged.concat(r.value);LIVE_OK.add(p);anyLive=true;}
+    if(r.status==='fulfilled'&&r.value&&r.value.stations&&r.value.stations.length){
+      merged=merged.concat(r.value.stations); LIVE_OK.add(p); anyLive=true;
+      if(r.value.calhau) CALHAU[p]=r.value.calhau; // atualiza calhau da praça ao vivo
+    }
     else merged=merged.concat(SNAPSHOT.filter(s=>s.praca===p));});
   if(merged.length){
     const h=dataHash(merged);
