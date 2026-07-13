@@ -383,7 +383,7 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
     </div>
     <div>
       <div class="card" style="margin-bottom:26px">
-        <h3>Faces estáticas por tipo</h3>
+        <h3>Faces estáticas por tipo <small>telas digitais fora</small></h3>
         <div class="blist" id="tipo-list"></div>
       </div>
       <div class="card">
@@ -674,14 +674,16 @@ function renderBairro(list){const g={};
       <i class="seg-digi" style="width:${100*r.digi/r.tot}%"></i></div></div>`).join(''):'<div class="empty">Sem dados.</div>';
 }
 function renderTipo(list){const g={};
-  list.forEach(s=>{const t=s.tipo||'—';g[t]=g[t]||{disp:0,calhau:0,occ:0,digi:0};[classA(s),classB(s)].forEach(c=>g[t][c]++);});
-  const arr=Object.entries(g).map(([t,v])=>({t,...v,tot:v.disp+v.calhau+v.occ+v.digi})).sort((a,b)=>b.tot-a.tot);
-  $('#tipo-list').innerHTML=arr.map(r=>`<div class="brow">
-    <div class="bt"><span class="name">${r.t}</span><span class="val">${r.tot} faces</span></div>
-    <div class="track"><i class="seg-disp" style="width:${100*r.disp/r.tot}%"></i>
-      <i class="seg-calhau" style="width:${100*r.calhau/r.tot}%"></i>
-      <i class="seg-occ" style="width:${100*r.occ/r.tot}%"></i>
-      <i class="seg-digi" style="width:${100*r.digi/r.tot}%"></i></div></div>`).join('');
+  list.forEach(s=>{const t=s.tipo||'—';g[t]=g[t]||{disp:0,calhau:0,occ:0,digiface:0};
+    [classA(s),classB(s)].forEach(c=>{ if(c==='digi') g[t].digiface++; else g[t][c]++; });});
+  // só tipos que possuem faces estáticas; total = faces estáticas (telas digitais ficam de fora)
+  const arr=Object.entries(g).map(([t,v])=>({t,...v,est:v.disp+v.calhau+v.occ}))
+    .filter(r=>r.est>0).sort((a,b)=>b.est-a.est);
+  $('#tipo-list').innerHTML=arr.length?arr.map(r=>`<div class="brow">
+    <div class="bt"><span class="name">${r.t}</span><span class="val">${r.est} face${r.est===1?'':'s'} est.${r.digiface?` · +${r.digiface} digital`:''}</span></div>
+    <div class="track"><i class="seg-disp" style="width:${100*r.disp/r.est}%"></i>
+      <i class="seg-calhau" style="width:${100*r.calhau/r.est}%"></i>
+      <i class="seg-occ" style="width:${100*r.occ/r.est}%"></i></div></div>`).join(''):'<div class="empty">Sem faces estáticas.</div>';
 }
 function renderAdv(list){const g={};
   list.forEach(s=>{[['a',classA(s)],['b',classB(s)]].forEach(([side,c])=>{
