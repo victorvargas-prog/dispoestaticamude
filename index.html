@@ -357,7 +357,7 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
     </div>
     <div class="occ-badge">
       <div class="big" id="occ-big">—</div>
-      <div class="lbl">Ocupação estática</div>
+      <div class="lbl">Ocupação estática<br><span style="text-transform:none;letter-spacing:0;color:var(--faint)">só campanhas vendidas · calhau não conta</span></div>
     </div>
   </section>
   <div class="kpis" id="kpis"></div>
@@ -594,7 +594,7 @@ function renderHome(){
     {n:all.n,k:'Estações · 9 praças'},
     {n:all.livre,k:'Faces livres p/ venda',c:'acc'},
     {n:all.calhau,k:'Calhau'},
-    {n:all.occRate+'%',k:'Ocupação estática geral'},
+    {n:all.occRate+'%',k:'Ocupação (só vendidas · sem calhau)'},
   ].map(k=>`<div class="htk ${k.c||''}"><div class="n">${typeof k.n==='number'?fmt(k.n):k.n}</div><div class="k">${k.k}</div></div>`).join('');
   const cards=PRACAS.map(p=>{const s=stats(listOf(p));return {p,s};})
     .sort((a,b)=>b.s.livre-a.s.livre);
