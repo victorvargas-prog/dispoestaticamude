@@ -301,6 +301,16 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
 .exp-est-item .ec{font-family:'IBM Plex Mono',monospace;font-size:12px}
 .exp-est-item .eb{color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .exp-est-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--faint)}
+.exp-raio-box{margin-top:14px;border-top:1px solid var(--line);padding-top:16px}
+.exp-raio-row{display:flex;gap:16px;flex-wrap:wrap}
+.exp-lbl{display:block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+.exp-raio-box input{width:100%;font-family:'IBM Plex Mono',monospace;font-size:13px;background:var(--surface2);border:1px solid var(--line2);
+  color:var(--text);padding:10px 13px;border-radius:9px;outline:none}
+.exp-raio-box input:focus{border-color:var(--accent)}
+.exp-hint{font-size:11px;color:var(--faint);margin-top:6px;line-height:1.4}
+.exp-raio-status{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;padding:10px 13px;border-radius:9px;background:var(--surface2);border:1px solid var(--line)}
+.exp-raio-status.ok{color:var(--accent);border-color:var(--accent)}
+.exp-raio-status.err{color:var(--calhau)}
 </style>
 </head>
 <body>
@@ -458,6 +468,23 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
         <div class="exp-est-list" id="expEstList"></div>
         <div class="exp-est-foot"><span id="expEstCount">0 selecionadas</span>
           <span><span class="select-all" id="expEstMarkAll">marcar visíveis</span> · <span class="select-all" id="expEstClear">limpar</span></span></div>
+      </div>
+    </div>
+    <div class="exp-card" id="expRaioCard"><h4>Filtro por raio <small style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">a partir de um ponto no mapa</small></h4>
+      <label class="check-row" style="padding:0 0 4px"><input type="checkbox" id="expRaioOn"><span>Filtrar por distância <small>só estações dentro do raio, na praça selecionada</small></span></label>
+      <div id="expRaioBox" class="exp-raio-box hidden">
+        <div class="exp-raio-row">
+          <div style="flex:2;min-width:200px">
+            <label class="exp-lbl">Coordenada central (lat, lng)</label>
+            <input type="text" id="expRaioCoord" placeholder="ex: -15.7942, -47.8822">
+            <div class="exp-hint">No Google Maps: clique com o botão direito no ponto → clique nas coordenadas para copiar → cole aqui.</div>
+          </div>
+          <div style="flex:1;min-width:110px">
+            <label class="exp-lbl">Raio (km)</label>
+            <input type="number" id="expRaioKm" value="2" min="0.1" step="0.1">
+          </div>
+        </div>
+        <div class="exp-raio-status" id="expRaioStatus"></div>
       </div>
     </div>
     <div class="exp-card"><h4>Colunas do arquivo</h4><div class="col-grid" id="expCols"></div>
@@ -745,11 +772,26 @@ $('#brandHome').addEventListener('click',()=>location.hash='#/');
 const EXP_COLS=[{k:'cod',label:'Código'},{k:'praca',label:'Praça'},{k:'cidade',label:'Cidade'},{k:'unidade',label:'Unidade'},
   {k:'tipo',label:'Tipo de mídia'},{k:'bairro',label:'Bairro / Setor'},{k:'face',label:'Face (A/B)'},
   {k:'faceStatus',label:'Status da face'},{k:'anunciante',label:'Anunciante/conteúdo'},
-  {k:'imp',label:'Impactos/mês'},{k:'coord',label:'Coordenadas'}];
-let expPracas=new Set(), expCols=new Set(EXP_COLS.map(c=>c.k)), expFormat='csv';
+  {k:'imp',label:'Impactos/mês'},{k:'coord',label:'Coordenadas'},{k:'distKm',label:'Distância (km)'}];
+// parse "lat, lng" -> [lat,lng] ou null
+function parseCoord(str){ if(!str) return null;
+  const m=String(str).trim().match(/^\s*(-?\d+(?:[.,]\d+)?)\s*[, ]\s*(-?\d+(?:[.,]\d+)?)\s*$/);
+  if(!m) return null;
+  const lat=parseFloat(m[1].replace(',','.')), lng=parseFloat(m[2].replace(',','.'));
+  if(isNaN(lat)||isNaN(lng)||Math.abs(lat)>90||Math.abs(lng)>180) return null;
+  return [lat,lng]; }
+// distância Haversine em km
+function haversineKm(a,b){ const R=6371, rad=x=>x*Math.PI/180;
+  const dLat=rad(b[0]-a[0]), dLng=rad(b[1]-a[1]);
+  const s=Math.sin(dLat/2)**2 + Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s)); }
+let expPracas=new Set(), expCols=new Set(EXP_COLS.filter(c=>c.k!=='distKm').map(c=>c.k)), expFormat='csv';
 let expEstAll=true, expEstacoes=new Set(); // seleção de estações específicas (por código)
+let expRaioOn=false, expRaioCenter=null, expRaioKm=2; // filtro por raio
 function openExportPage(){expPracas=new Set(currentPraca?[currentPraca]:[]);
   expEstAll=true; expEstacoes=new Set(); $('#expEstAll').checked=true; $('#expEstPicker').classList.add('hidden');
+  expRaioOn=false; expRaioCenter=null; $('#expRaioOn').checked=false; $('#expRaioBox').classList.add('hidden');
+  $('#expRaioCoord').value=''; $('#expRaioKm').value=2; $('#expRaioStatus').textContent='';
   renderExpPracas();renderExpCols();renderExpEstacoes();updateExpPreview();$('#expOverlay').classList.add('open');}
 function closeExportPage(){$('#expOverlay').classList.remove('open');}
 $('#openExport').addEventListener('click',openExportPage);
@@ -800,6 +842,30 @@ $('#expEstMarkAll').addEventListener('click',()=>{
   renderExpEstacoes(); updateExpPreview();});
 $('#expEstClear').addEventListener('click',()=>{expEstacoes=new Set();renderExpEstacoes();updateExpPreview();});
 
+/* ---- filtro por raio ---- */
+$('#expRaioOn').addEventListener('change',e=>{
+  expRaioOn=e.target.checked; $('#expRaioBox').classList.toggle('hidden',!expRaioOn);
+  updateRaio();});
+$('#expRaioCoord').addEventListener('input',updateRaio);
+$('#expRaioKm').addEventListener('input',updateRaio);
+function updateRaio(){
+  expRaioCenter=parseCoord($('#expRaioCoord').value);
+  expRaioKm=parseFloat($('#expRaioKm').value)||0;
+  const st=$('#expRaioStatus');
+  if(!expRaioOn){ st.textContent=''; st.className='exp-raio-status'; updateExpPreview(); return; }
+  if($('#expRaioCoord').value.trim() && !expRaioCenter){
+    st.textContent='⚠ Coordenada inválida. Cole no formato: -15.7942, -47.8822'; st.className='exp-raio-status err';
+  } else if(!expRaioCenter){
+    st.textContent='Cole a coordenada central e defina o raio.'; st.className='exp-raio-status';
+  } else {
+    // garantir coluna de distância marcada automaticamente
+    if(!expCols.has('distKm')){ expCols.add('distKm'); renderExpCols(); }
+    st.textContent=`Ponto: ${expRaioCenter[0].toFixed(5)}, ${expRaioCenter[1].toFixed(5)} · raio ${expRaioKm} km`;
+    st.className='exp-raio-status ok';
+  }
+  updateExpPreview();
+}
+
 function renderExpCols(){$('#expCols').innerHTML=EXP_COLS.map(c=>`<label class="check-row"><input type="checkbox" data-c="${c.k}" ${expCols.has(c.k)?'checked':''}><span>${c.label}</span></label>`).join('');
   $$('#expCols input').forEach(i=>i.addEventListener('change',()=>{i.checked?expCols.add(i.dataset.c):expCols.delete(i.dataset.c);updateExpPreview();}));}
 $('#expColsAll').addEventListener('click',()=>{if(expCols.size===EXP_COLS.length)expCols.clear();else EXP_COLS.forEach(c=>expCols.add(c.k));renderExpCols();updateExpPreview();});
@@ -810,8 +876,17 @@ function buildExportRows(){
   const set=new Set(expScopePracas());
   let base=STATIONS.filter(s=>set.has(s.praca));
   if(!expEstAll) base=base.filter(s=>expEstacoes.has(s.praca+'|'+s.cod)); // só estações marcadas
+  // filtro por raio (só quando ativo e com centro válido); calcula distância por estação
+  const useRaio = expRaioOn && expRaioCenter && expRaioKm>0;
+  const distOf={};
+  if(useRaio){
+    base=base.filter(s=>{const c=parseCoord(s.coord); if(!c) return false;
+      const d=haversineKm(expRaioCenter,c); distOf[s.praca+'|'+s.cod]=d; return d<=expRaioKm;});
+    base.sort((a,b)=>distOf[a.praca+'|'+a.cod]-distOf[b.praca+'|'+b.cod]);
+  }
   const out=[];
   base.forEach(s=>{const ca=classA(s),cb=classB(s);
+    const d=distOf[s.praca+'|'+s.cod];
     [['A',ca,s.a],['B',cb,s.b]].forEach(([face,c,val])=>{
       let inc=false;
       if(status==='livre')inc=(c==='disp'||c==='calhau');
@@ -821,7 +896,8 @@ function buildExportRows(){
       else if(status==='all')inc=true;
       if(!inc)return;
       out.push({cod:s.cod,praca:s.praca,cidade:s.cidade,unidade:s.unidade||'',tipo:s.tipo,bairro:s.bairro,face,
-        faceStatus:statLabel[c],anunciante:(c==='disp'?'':val),imp:s.imp,coord:s.coord});});});
+        faceStatus:statLabel[c],anunciante:(c==='disp'?'':val),imp:s.imp,coord:s.coord,
+        distKm:(d!=null?d.toFixed(2).replace('.',','):'')});});});
   return out;}
 function updateExpPreview(){const rows=buildExportRows();const cols=EXP_COLS.filter(c=>expCols.has(c.k));
   $('#expCount').textContent=`${rows.length} linha${rows.length===1?'':'s'}`;
