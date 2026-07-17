@@ -488,6 +488,18 @@ body.presenting #viewPraca{display:block!important;padding-top:64px}
         <div class="exp-raio-status" id="expRaioStatus"></div>
       </div>
     </div>
+    <div class="exp-card" id="expFuturoCard"><h4>Disponibilidade em data futura <small style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">o que estará livre para venda</small></h4>
+      <label class="check-row" style="padding:0 0 4px"><input type="checkbox" id="expFuturoOn"><span>Projetar para uma data <small>livre = disponível + calhau + campanhas de venda que terminam até a data</small></span></label>
+      <div id="expFuturoBox" class="exp-raio-box hidden">
+        <div class="exp-raio-row">
+          <div style="flex:1;min-width:160px">
+            <label class="exp-lbl">Data de referência</label>
+            <input type="date" id="expFuturoData">
+          </div>
+        </div>
+        <div class="exp-raio-status" id="expFuturoStatus"></div>
+      </div>
+    </div>
     <div class="exp-card"><h4>Colunas do arquivo</h4><div class="col-grid" id="expCols"></div>
       <div class="select-all" id="expColsAll" style="margin-top:10px">selecionar todas</div></div>
     <div class="exp-card"><h4>Formato</h4><div class="fmt-row" id="expFormat">
@@ -572,16 +584,32 @@ function parseGvizJSON(text){
   }));
   return {cols,rows};
 }
-async function fetchPraca(p){
-  // tq=select * ignora o filtro de VISUALIZAÇÃO aplicado na aba e traz todas as linhas
+// gid numérico de cada aba — quando preenchido, usa o export CSV que IGNORA qualquer filtro da planilha
+const GID_MAP={BSB:"1164372890",GRJ:"131395245",FOR:"1715888893",GYN:"216636222",FLN:"196972881",JPA:"563508400",RIO:"0",SPO:"1023285551",REC:"16235158"};
+async function fetchRows(p){
+  const gid=GID_MAP[p];
+  if(gid){ // método robusto: export CSV da aba inteira, imune a filtros/visualizações
+    const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}&_=${Date.now()}`;
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const rows=parseCSV(await r.text());
+    // primeira linha com "Código" é o cabeçalho
+    let hi=rows.findIndex(row=>row.some(c=>['código','codigo'].includes(norm(c).toLowerCase())));
+    if(hi<0) hi=0;
+    return {H:rows[hi], body:rows.slice(hi+1)};
+  }
+  // reserva: gviz JSON (pode respeitar "visualização de filtro" salva)
   const base=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${encodeURIComponent(p)}&headers=1&_=${Date.now()}`;
   const r=await fetch(base+`&tqx=out:json&tq=${encodeURIComponent('select *')}`,{cache:'no-store'});
   if(!r.ok) throw new Error('HTTP '+r.status);
   const {cols:H0, rows:body0}=parseGvizJSON(await r.text());
-  // se a 1ª linha de dados parecer o cabeçalho real (algumas abas têm título antes), realinha
-  let H=H0, body=body0;
   const looksHeader=arr=>arr.some(c=>['código','codigo'].includes(String(c).toLowerCase()));
+  let H=H0, body=body0;
   if(!looksHeader(H) && body.length && looksHeader(body[0])){ H=body[0]; body=body.slice(1); }
+  return {H, body};
+}
+async function fetchPraca(p){
+  const {H, body}=await fetchRows(p);
   const ic=idxOf(H,['Código','Codigo']),it=idxOf(H,['Tipo de mídia','Tipo']),icid=idxOf(H,['Cidade']),
     ib=idxOf(H,['Bairro / Setor','Bairro']),ia=idxOf(H,['Face A']),ibf=idxOf(H,['Face B']),
     icoord=idxOf(H,['Coordenada Geográfica','Coordenada']),im=idxOf(H,['1. Impactos','Impactos']),iu=idxOf(H,['Unidade']);
@@ -856,10 +884,13 @@ function haversineKm(a,b){ const R=6371, rad=x=>x*Math.PI/180;
 let expPracas=new Set(), expCols=new Set(EXP_COLS.filter(c=>c.k!=='distKm').map(c=>c.k)), expFormat='csv';
 let expEstAll=true, expEstacoes=new Set(); // seleção de estações específicas (por código)
 let expRaioOn=false, expRaioCenter=null, expRaioKm=2; // filtro por raio
+let expFuturoOn=false, expFuturoData=""; // projeção de disponibilidade futura
 function openExportPage(){expPracas=new Set(currentPraca?[currentPraca]:[]);
   expEstAll=true; expEstacoes=new Set(); $('#expEstAll').checked=true; $('#expEstPicker').classList.add('hidden');
   expRaioOn=false; expRaioCenter=null; $('#expRaioOn').checked=false; $('#expRaioBox').classList.add('hidden');
   $('#expRaioCoord').value=''; $('#expRaioKm').value=2; $('#expRaioStatus').textContent='';
+  expFuturoOn=false; expFuturoData=''; $('#expFuturoOn').checked=false; $('#expFuturoBox').classList.add('hidden');
+  $('#expFuturoData').value=''; $('#expFuturoStatus').textContent='';
   renderExpPracas();renderExpCols();renderExpEstacoes();updateExpPreview();$('#expOverlay').classList.add('open');}
 function closeExportPage(){$('#expOverlay').classList.remove('open');}
 $('#openExport').addEventListener('click',openExportPage);
@@ -933,6 +964,23 @@ function updateRaio(){
   }
   updateExpPreview();
 }
+/* ---- projeção para data futura ---- */
+$('#expFuturoOn').addEventListener('change',e=>{
+  expFuturoOn=e.target.checked; $('#expFuturoBox').classList.toggle('hidden',!expFuturoOn);
+  if(expFuturoOn && !$('#expFuturoData').value){ const d=new Date(); d.setDate(d.getDate()+30); $('#expFuturoData').value=d.toISOString().slice(0,10); }
+  updateFuturo();
+});
+$('#expFuturoData').addEventListener('input',updateFuturo);
+function updateFuturo(){
+  expFuturoData=$('#expFuturoData').value;
+  const st=$('#expFuturoStatus');
+  if(!expFuturoOn){ st.textContent=''; st.className='exp-raio-status'; updateExpPreview(); return; }
+  if(!expFuturoData){ st.textContent='Escolha a data de referência.'; st.className='exp-raio-status'; }
+  else{ if(!expCols.has('campFim')){ expCols.add('campFim'); renderExpCols(); }
+    st.textContent=`Livre em ${fmtData(expFuturoData)} = disponível + calhau + vendas que terminam até essa data.`;
+    st.className='exp-raio-status ok'; }
+  updateExpPreview();
+}
 
 function renderExpCols(){$('#expCols').innerHTML=EXP_COLS.map(c=>`<label class="check-row"><input type="checkbox" data-c="${c.k}" ${expCols.has(c.k)?'checked':''}><span>${c.label}</span></label>`).join('');
   $$('#expCols input').forEach(i=>i.addEventListener('change',()=>{i.checked?expCols.add(i.dataset.c):expCols.delete(i.dataset.c);updateExpPreview();}));}
@@ -953,19 +1001,28 @@ function buildExportRows(){
     base.sort((a,b)=>distOf[a.praca+'|'+a.cod]-distOf[b.praca+'|'+b.cod]);
   }
   const out=[];
+  const useFuturo = expFuturoOn && expFuturoData;
   base.forEach(s=>{const ca=classA(s),cb=classB(s);
     const d=distOf[s.praca+'|'+s.cod];
     [['A',ca,s.a],['B',cb,s.b]].forEach(([face,c,val])=>{
-      let inc=false;
-      if(status==='livre')inc=(c==='disp'||c==='calhau');
-      else if(status==='disp')inc=c==='disp';
-      else if(status==='calhau')inc=c==='calhau';
-      else if(status==='occ')inc=c==='occ';
-      else if(status==='all')inc=true;
-      if(!inc)return;
       const camp=(c==='occ')?campanhaDe(s.praca,val):null;
+      let inc=false, statusFuturo='';
+      if(useFuturo){
+        // livre na data: disponível, calhau, ou venda que termina até a data (com data de fim)
+        if(c==='disp'){inc=true; statusFuturo='Disponível';}
+        else if(c==='calhau'){inc=true; statusFuturo='Calhau';}
+        else if(c==='occ' && camp && camp.f && camp.f<=expFuturoData){inc=true; statusFuturo=`Vaga (fim ${fmtData(camp.f)})`;}
+        else inc=false; // occ sem fim, ou fim depois da data, ou digital => segue ocupada
+      } else {
+        if(status==='livre')inc=(c==='disp'||c==='calhau');
+        else if(status==='disp')inc=c==='disp';
+        else if(status==='calhau')inc=c==='calhau';
+        else if(status==='occ')inc=c==='occ';
+        else if(status==='all')inc=true;
+      }
+      if(!inc)return;
       out.push({cod:s.cod,praca:s.praca,cidade:s.cidade,unidade:s.unidade||'',tipo:s.tipo,bairro:s.bairro,face,
-        faceStatus:statLabel[c],anunciante:(c==='disp'?'':val),
+        faceStatus:useFuturo?statusFuturo:statLabel[c],anunciante:(c==='disp'?'':val),
         campInicio:camp?fmtData(camp.i):'',campFim:camp?fmtData(camp.f):'',
         imp:s.imp,coord:s.coord,
         distKm:(d!=null?d.toFixed(2).replace('.',','):'')});});});
