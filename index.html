@@ -803,7 +803,9 @@ function renderTipo(list){const g={};
       <i class="seg-occ" style="width:${100*r.occ/r.est}%"></i></div></div>`).join(''):'<div class="empty">Sem faces estáticas.</div>';
 }
 function renderAdv(list){const g={};
-  list.forEach(s=>{[['a',classA(s)],['b',classB(s)]].forEach(([side,c])=>{
+  // conta só faces de estações puramente estáticas (exclui a Face B das estações digitais), como a planilha base
+  list.forEach(s=>{ if(ehTipoDigital(s.tipo)) return;
+    [['a',classA(s)],['b',classB(s)]].forEach(([side,c])=>{
     if(c==='occ'||c==='calhau'){const k=norm(side==='a'?s.a:s.b);g[k]=(g[k]||0)+1;}});});
   const arr=Object.entries(g).sort((a,b)=>b[1]-a[1]).slice(0,25);const max=arr[0]?arr[0][1]:1;
   $('#adv-list').innerHTML=arr.length?arr.map(([k,v])=>`<div class="brow">
