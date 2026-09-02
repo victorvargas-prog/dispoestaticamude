@@ -596,7 +596,7 @@ function parseGvizJSON(text){
   return {cols,rows};
 }
 // gid numérico de cada aba — quando preenchido, usa o export CSV que IGNORA qualquer filtro da planilha
-const GID_MAP={BSB:"1164372890",GRJ:"131395245",FOR:"1715888893",GYN:"216636222",FLN:"196972881",JPA:"563508400",RIO:"0",SPO:"1023285551",REC:"16235158"};
+const GID_MAP={BSB:"1164372890",GRJ:"131395245",FOR:"1715888893",GYN:"216636222",FLN:"196972881",JPA:"563508400",RIO:"16935335",SPO:"1023285551",REC:"16235158"};
 async function fetchRows(p){
   const gid=GID_MAP[p];
   if(gid){ // método robusto: export CSV da aba inteira, imune a filtros/visualizações
