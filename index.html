@@ -548,7 +548,8 @@ const isCalhau=(v,p)=>{ const t=norm(v); if(!t) return false;
   const set = CALHAU[p||currentPraca]; return set ? set.has(t) : false; }; // ou marcado no resumo da praça
 const hidden={disp:false,calhau:false,occ:false,digi:false};
 
-function classA(r){ if(ehTipoDigital(r.tipo)) return 'digi'; const v=norm(r.a);
+function classA(r){ const v=norm(r.a);
+  if(v==='Digital') return 'digi';   // só é tela digital se a Face A disser "Digital" (tipo pode estar adiantado)
   if(v==='Disponível') return 'disp'; if(isCalhau(v,r.praca)) return 'calhau'; return 'occ'; }
 function classB(r){ const v=norm(r.b);
   if(v==='Digital') return 'digi'; if(v==='Disponível') return 'disp'; if(isCalhau(v,r.praca)) return 'calhau'; return 'occ'; }
