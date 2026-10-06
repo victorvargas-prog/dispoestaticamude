@@ -535,7 +535,11 @@ let LIVE_OK = new Set();
 let currentPraca = "";
 // Clientes marcados como CALHAU no resumo de cada praça (fallback do snapshot; atualizado ao vivo)
 const CALHAU_FALLBACK={"BSB": ["EVOLVE BONI", "EVOLVE CALHAU", "GRANADO", "GRANADO CARE", "LEO MADEIRAS", "OUTBACK"], "GRJ": ["SECRETARIA COMUNICAÇÃO", "Sabesp"], "FOR": ["99 FOOD", "AVON", "GRANADO", "GRANADO CARE", "OUTBACK"], "GYN": [], "FLN": ["GRANADO", "GRANADO CARE", "OUTBACK", "SHIFT Digital"], "JPA": ["GRANADO CARE", "OUTBACK"], "RIO": ["99 FOOD CALHAU", "Bacio", "GRANADO", "GRANADO CARE", "LEO MADEIRAS", "UNISSUAM"], "SPO": ["DELBONI", "FRESCATTO", "MÉLIUZ", "Sorox - adicional (calhau)"], "REC": ["99 FOOD", "GRANADO", "GRANADO CARE", "LEO MADEIRAS", "NORSAL", "OUTBACK"]};
+// Calhau "manual": clientes que são preenchimento temporário mas NÃO estão marcados CALHAU no resumo.
+// (JPA: OUTLET = estáticas instaladas nas estações ainda não digitalizadas.) Ideal: marcar CALHAU na planilha e remover daqui.
+const EXTRA_CALHAU={"JPA":["OUTLET"]};
 const CALHAU={}; Object.keys(CALHAU_FALLBACK).forEach(p=>CALHAU[p]=new Set(CALHAU_FALLBACK[p]));
+Object.keys(EXTRA_CALHAU).forEach(p=>{CALHAU[p]=CALHAU[p]||new Set(); EXTRA_CALHAU[p].forEach(x=>CALHAU[p].add(x));});
 // Datas de campanhas de VENDA por praça (cliente -> {i:início, f:fim}); atualizado ao vivo
 const CAMPANHA_FALLBACK={"BSB": {"EVOLVE": {"i": "2026-01-01", "f": "2026-12-25"}, "OUTBACK.": {"i": "2026-10-05", "f": "2026-11-29"}}, "GRJ": {}, "FOR": {"99 PAY": {"i": "2026-07-28", "f": "2026-12-07"}, "MRV": {"i": "2026-09-21", "f": "2026-10-19"}, "BOTICÁRIO": {"i": "2026-10-21", "f": "2026-10-27"}, "OUTBACK.": {"i": "2026-10-05", "f": "2026-11-29"}}, "GYN": {"PREZUNIC": {"i": "2026-06-25", "f": "2026-09-30"}, "AMBEV": {"i": "2026-09-15", "f": "2026-09-21"}, "SCHWEPPES": {"i": "2026-09-08", "f": "2026-09-30"}, "PIRACANJUBA": {"i": "2026-09-09", "f": "2026-09-29"}, "O BOTICARIO": {"i": "2026-09-21", "f": "2026-10-10"}}, "FLN": {"FOGO & MAR": {"i": "2026-03-12", "f": "2026-09-15"}, "UNIMED": {"i": "2026-08-24", "f": "2026-10-23"}, "OUTBACK.": {"i": "2026-10-05", "f": "2026-11-29"}}, "JPA": {"CENTRO DE ENSINO E SERVICOS PREPARATORIOS DE VESTIBUL": {"i": "2026-08-17", "f": "2026-11-30"}, "OUTLET": {"i": "2026-09-07", "f": "2026-09-13"}, "OUTBACK.": {"i": "2026-10-05", "f": "2026-11-29"}}, "RIO": {"[VIVO] 2026 A": {"i": "2026-01-01", "f": "2026-12-31"}, "[VIVO] 2026 B": {"i": "2026-01-01", "f": "2026-12-31"}, "PROGREDIR": {"i": "2026-03-10", "f": "2026-06-01"}, "UVA": {"i": "2026-07-24", "f": "2026-08-31"}, "INDITEX": {"i": "2026-08-20", "f": "2026-09-20"}}, "SPO": {"UNIP": {"i": "2026-06-15", "f": "2026-10-04"}, "L'ORÉAL": {"i": "2026-08-25", "f": "2026-09-26"}, "CHURRASCO ON FIRE": {"i": "2026-08-24", "f": "2026-09-26"}, "PIRACANJUBA": {"i": "2026-09-05", "f": "2026-10-02"}}, "REC": {"99 PAY": {"i": "2026-07-28", "f": "2026-12-07"}, "OUTBACK.": {"i": "2026-10-05", "f": "2026-11-29"}}};
 const CAMPANHA=JSON.parse(JSON.stringify(CAMPANHA_FALLBACK));
@@ -1170,7 +1174,8 @@ async function doRefresh(force){
   res.forEach((r,i)=>{const p=PRACAS[i];
     if(r.status==='fulfilled'&&r.value&&r.value.stations&&r.value.stations.length){
       merged=merged.concat(r.value.stations); LIVE_OK.add(p); anyLive=true;
-      if(r.value.calhau) CALHAU[p]=r.value.calhau; // atualiza calhau da praça ao vivo
+      if(r.value.calhau){ CALHAU[p]=r.value.calhau; // atualiza calhau da praça ao vivo
+        (EXTRA_CALHAU[p]||[]).forEach(x=>CALHAU[p].add(x)); } // mantém o calhau manual
       if(r.value.campanha) CAMPANHA[p]=r.value.campanha; // atualiza datas de campanha ao vivo
     }
     else merged=merged.concat(SNAPSHOT.filter(s=>s.praca===p));});
